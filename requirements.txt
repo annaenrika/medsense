@@ -1,0 +1,6 @@
+gradio
+torch
+transformers
+huggingface_hub
+PyPDF2
+python-dotenv
