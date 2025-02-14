@@ -1,5 +1,6 @@
 import os
 import warnings
+import logging
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
@@ -10,6 +11,10 @@ import hashlib
 from transformers import pipeline
 from huggingface_hub import login
 import config
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Check device availability
 device = "cpu"  # Default to CPU
@@ -32,7 +37,7 @@ if "pipe" not in globals():
         )
         print("Model loaded successfully")
     except Exception as e:
-        print(f"Error loading model: {e}")
+        logger.error(f"Error loading model: {e}")
         raise
 
 def hash_filename(filename):
@@ -63,7 +68,7 @@ def analyze_text(text):
         )
         return outputs[0]["generated_text"]
     except Exception as e:
-        print(f"Error in text generation: {e}")
+        logger.error(f"Error in text generation: {e}")
         return f"Error generating response: {str(e)}"
 
 def analyze_pdfs(pdf_files, pdf_cache):
@@ -91,7 +96,10 @@ def chat_with_model(message, chat_history):
     return "", chat_history
 
 # Gradio interface
-with gr.Blocks() as demo:
+with gr.Blocks(
+    title="MedSense AI",
+    theme=gr.themes.Soft()
+) as demo:
     gr.Markdown("# MedSense - Your Personalized Medical AI Intelligence")
     gr.Markdown("Upload PDF files for analysis or chat with your Medical AI assistant.")
 
@@ -99,17 +107,41 @@ with gr.Blocks() as demo:
     with gr.Row():
         pdf_input = gr.Files(label="Upload PDF Files", file_types=[".pdf"])
         output = gr.Textbox(label="Model Analysis", lines=20)
-    analyze_button = gr.Button("Analyze")
+    analyze_button = gr.Button("Analyze", variant="primary")
     analyze_button.click(fn=analyze_pdfs, inputs=[pdf_input, pdf_cache], outputs=[output, pdf_cache])
 
     gr.Markdown("---")
 
-    chatbot = gr.Chatbot(label="Chat with AI")
-    user_input = gr.Textbox(label="Enter your question", placeholder="Ask something...", lines=2)
-    submit_button = gr.Button("Send")
+    chatbot = gr.Chatbot(label="Chat with AI", height=400)
+    with gr.Row():
+        user_input = gr.Textbox(
+            label="Enter your question",
+            placeholder="Ask something...",
+            lines=2,
+            scale=4
+        )
+        submit_button = gr.Button("Send", variant="primary", scale=1)
     chat_history = gr.State([])
 
-    submit_button.click(chat_with_model, inputs=[user_input, chat_history], outputs=[user_input, chatbot])
+    submit_button.click(
+        chat_with_model,
+        inputs=[user_input, chat_history],
+        outputs=[user_input, chatbot]
+    )
 
 if __name__ == "__main__":
-    demo.launch()
+    try:
+        logger.info("Starting Gradio server...")
+        demo.launch(
+            server_name="0.0.0.0",
+            server_port=7860,
+            share=True,
+            debug=True,
+            show_error=True,
+            auth=None,
+            ssl_verify=False,
+            quiet=False
+        )
+    except Exception as e:
+        logger.error(f"Failed to start server: {str(e)}")
+        raise
