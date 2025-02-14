@@ -1,27 +1,39 @@
+import os
+import warnings
+warnings.filterwarnings('ignore')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 import gradio as gr
 import torch
 import PyPDF2
-import os
 import hashlib
 from transformers import pipeline
 from huggingface_hub import login
-import config  # Import API keys from config.py
+import config
 
-# Log in to Hugging Face using the token from config.py
+# Check device availability
+device = "cpu"  # Default to CPU
+print(f"Using device: {device}")
+
+# Log in to Hugging Face
 login(token=config.HUGGINGFACE_TOKEN)
 
 # Cache directory
 CACHE_DIR = "cache_pdfs"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Initialize the pipeline with GPU settings
+# Initialize the pipeline
 if "pipe" not in globals():
-    pipe = pipeline(
-        "text-generation",
-        model="ContactDoctor/Bio-Medical-Llama-3-8B",
-        device="cuda",
-        torch_dtype=torch.float16
-    )
+    try:
+        pipe = pipeline(
+            "text-generation",
+            model=config.MODEL_ID,
+            model_kwargs=config.MODEL_CONFIG
+        )
+        print("Model loaded successfully")
+    except Exception as e:
+        print(f"Error loading model: {e}")
+        raise
 
 def hash_filename(filename):
     return hashlib.md5(filename.encode()).hexdigest()
@@ -44,20 +56,15 @@ def extract_text_from_pdf(pdf_file):
     return text
 
 def analyze_text(text):
-    messages = [
-        {"role": "system", "content": "You are an expert trained on healthcare and biomedical domain!"},
-        {"role": "user", "content": text},
-    ]
-
-    outputs = pipe(
-        messages,
-        max_new_tokens=512,
-        temperature=0.7,
-        top_p=0.9,
-        do_sample=True
-    )
-
-    return outputs[0]["generated_text"]
+    try:
+        outputs = pipe(
+            text,
+            **config.GENERATION_CONFIG
+        )
+        return outputs[0]["generated_text"]
+    except Exception as e:
+        print(f"Error in text generation: {e}")
+        return f"Error generating response: {str(e)}"
 
 def analyze_pdfs(pdf_files, pdf_cache):
     combined_text = ""
@@ -72,9 +79,15 @@ def analyze_pdfs(pdf_files, pdf_cache):
     return analyze_text(combined_text), pdf_cache
 
 def chat_with_model(message, chat_history):
-    messages = [{"role": "user", "content": message}]
-    response = pipe(messages)[0]["generated_text"]
-    chat_history.append((message, response))
+    try:
+        response = pipe(
+            message,
+            **config.GENERATION_CONFIG
+        )[0]["generated_text"]
+        chat_history.append((message, response))
+    except Exception as e:
+        error_message = f"Error: {str(e)}"
+        chat_history.append((message, error_message))
     return "", chat_history
 
 # Gradio interface
